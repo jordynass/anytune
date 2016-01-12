@@ -21,6 +21,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
+import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -28,9 +32,12 @@ import java.net.URLConnection;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
@@ -47,6 +54,7 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
     Button b;
     Context context;
     HashSet<String> simpleTitles = new HashSet<String>();
+
     GoogleApiClient mGoogleApiClient;
     Geocoder geocoder;
     String[] cities;
@@ -54,6 +62,11 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
     Location currentLocation = null;
     int maxLength;
     Integer playlistLength = 0;
+    ArrayList<String> titleCatalog;
+
+
+    int debugIndex = 0;
+
 
     //Button b = (Button) findViewById(R.id.button);
     //Object o = findViewById(R.id.city_name);
@@ -142,7 +155,12 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
         currentLocation = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         Place currentPlace = new Place(currentLocation, context);
         cities = currentPlace.getCities();
-        Log.d(playlistLength.toString(), "Before PBE, length should be " + playlistLength.toString());
+        for (String city: cities) Log.d("", "City: " + city);
+        //Log.d("", "TOP 3 CITIES: " + cities[0] + " " + cities[1] + " " + cities[2]);
+
+
+        //Log.d(playlistLength.toString(), "Before PBE, length should be " + playlistLength.toString());
+
         new PlaylistBuilderEnclosed().execute(playlistLength);//, roads = currentPlace.getRoads(),
                 //neighborhoods = currentPlace.getNeighborhoods(), features = currentPlace.getFeatures();
 
@@ -162,6 +180,64 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) { text.setText("Location unavailable"); }
 
+    public synchronized void addInputLines(String urlString, int titleCount) {
+        //List<String> allInputLines = new ArrayList<String>(100);
+        //urlString = "http://papyrus.math.ucla.edu/seminars/show_quarter.php?t=1442817465&type=Analysis%20and%20PDE&id=&tba=";
+        debugIndex++;
+        Log.d("", "addInputLines called " + debugIndex);
+        BufferedReader bufferedReader = null;
+        HttpURLConnection httpURLConnection = null;
+        try {
+            Log.d("", "entered try statement " + debugIndex);
+
+            //CookieHandler.setDefault(new CookieManager(null, CookiePolicy.ACCEPT_NONE));
+
+            //urlString = "http://www.math.ucla.edu/~jsg66/songtesttext.txt";
+            URL url = new URL(urlString);
+            httpURLConnection = (HttpURLConnection) url.openConnection();
+            httpURLConnection.connect();
+
+            Log.d("", "finished connecting methods " + debugIndex);
+
+            InputStreamReader inputStreamReader = new InputStreamReader(httpURLConnection.getInputStream());
+
+            Log.d("", "got inputStream " + debugIndex);
+
+            bufferedReader = new BufferedReader(inputStreamReader);
+
+            Log.d("", "built bufferedReader " + debugIndex);
+
+            String currentLine = bufferedReader.readLine();
+
+            int currentTitleCount = 0;
+            while (currentTitleCount < titleCount && currentLine != null) {
+                if (currentLine.contains("<Song>")) {
+                    String song = TagExtractor.extractTag(currentLine, "Song");
+                    String simple = Song.simpleTitle(song);
+                    if (!simpleTitles.contains(simple)) {
+                        titleCatalog.add(song);
+                        simpleTitles.add(simple);
+                        currentTitleCount++;
+                    }
+                }
+                currentLine = bufferedReader.readLine();
+
+
+                //allInputLines.add(currentLine);
+                //currentLine = bufferedReaders[i].readLine();
+            }
+        } catch (IOException ioe) {
+            Log.d("", ioe.toString());
+            text.setText("Database connection unavailable");
+        } finally {
+            try {
+                bufferedReader.close();
+            } catch (Exception e) {}
+            try {
+                httpURLConnection.disconnect();
+            } catch (Exception e) {}
+        }
+    }
 
     class PlaylistBuilderEnclosed extends AsyncTask<Integer, Void, String[]> {
 
@@ -175,48 +251,106 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
 
         @Override
         protected String[] doInBackground(Integer... playlistLengths) {
-            try {
+            //try {
                 //Log.d("TESTAAAA", cities.length + "TESTAAAA " + playlistLengths[0].intValue());
 
+                int cityCount = cities.length;
+                titleCatalog = new ArrayList<String>(cityCount * (cityCount + maxLength));
+
                 maxLength = playlistLengths[0].intValue();
-                String[] urlFriendlyCities = new String[cities.length];
+                String[] urlFriendlyCities = new String[cityCount];
 
                 //Log.d("TESTB", "TESTB");
 
-                for (int i = 0; i < urlFriendlyCities.length; i++)
+                for (int i = 0; i < cityCount; i++)
                     urlFriendlyCities[i] = cities[i].replace(' ', '+');
 
                 //Log.d(cities[0], cities[0]);
                 //Log.d(urlFriendlyCities[0], urlFriendlyCities[0]);
+/*
+                URL[] chartLyricsTextSearchURLs = new URL[cityCount];//if I change the length to 0, I should get back the "Just LA" case.
+                HttpURLConnection[] chartLyricsTextSearchURLConnections = new HttpURLConnection[cityCount];
+                InputStreamReader[] inputStreamReaders = new InputStreamReader[cityCount];
+                BufferedReader[] bufferedReaders = new BufferedReader[cityCount];*/
+                //String[] allInputLines = new String[cityCount * (cityCount + 1) / 2];//first index is line number, second index is city number
 
-                URL chartLyricsTextSearchURL = new URL("http://api.chartlyrics.com/apiv1.asmx/SearchLyricText?lyricText=" + urlFriendlyCities[0]);
-                Log.d("1", "1");
-                URLConnection chartLyricsTextSearchURLConnection = chartLyricsTextSearchURL.openConnection();
-                Log.d("1", "2");
-                chartLyricsTextSearchURLConnection.connect();
-                Log.d("1", "3");
+                //int index = 0;
+
+                for (int i = 0; i < cityCount; i++) //{
+                    addInputLines("http://api.chartlyrics.com/apiv1.asmx/SearchLyricText?lyricText=" + urlFriendlyCities[i], 4 * (cityCount - i) + maxLength);
 
 
-                //InputStream inputStream = chartLyricsTextSearchURL.openStream();
 
-                Log.d("1", "a");
 
-                BufferedReader in;
-                Log.d("1", "b");
+                    /*Log.d("", "Start connection loop " + i);
+                    chartLyricsTextSearchURLs[i] = new URL("http://api.chartlyrics.com/apiv1.asmx/SearchLyricText?lyricText=" + urlFriendlyCities[i]);
+                    Log.d("","a");
+                    chartLyricsTextSearchURLConnections[i] = (HttpURLConnection) chartLyricsTextSearchURLs[i].openConnection();
+                    Log.d("", "b");
+                    //chartLyricsTextSearchURLConnections[i].setRequestProperty("connection", "close");
+                    //System.setProperty("http.keepAlive", "true");
+                    chartLyricsTextSearchURLConnections[i].connect();
+                    Log.d("", "c");
+                    try { inputStreamReaders[i] = new InputStreamReader(chartLyricsTextSearchURLConnections[i].getInputStream()); }
+                    catch (IOException ioe) { Log.d("", "HERE'S THE EXCEPTION: " + ioe.toString()); }
+                    Log.d("","d");
+                    bufferedReaders[i] = new BufferedReader(inputStreamReaders[i]);
+                    Log.d("","e");
+                    //List<String> lineList = new ArrayList<String>();
+                    String currentLine = bufferedReaders[i].readLine();
+                    Log.d("","f");
+                    for (int j = 0; j < 4 * (cityCount - i) + maxLength && currentLine != null; j++) {
+                        allInputLines.add(currentLine);
+                        currentLine = bufferedReaders[i].readLine();
+                    }
+                    Log.d("","g");
+                    bufferedReaders[i].close();
+                    chartLyricsTextSearchURLConnections[i].disconnect();
+                    Log.d("", "End connection loop " + i);
+                    *//////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+                    //Thread.sleep(10000);
+                //}
+
+
                 //InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
-                InputStreamReader inputStreamReader = new InputStreamReader(chartLyricsTextSearchURLConnection.getInputStream());
-                Log.d("1", "c");
-                in = new BufferedReader(inputStreamReader);
-                Log.d("1", "d");
 
-                Log.d("1", "4");
+
+                //        new InputStreamReader(chartLyricsTextSearchURLConnection.getInputStream());
+                //Log.d("1", "c");
+                //in = new BufferedReader(inputStreamReader);
+                //Log.d("1", "d");
+
+                //Log.d("1", "4");
 
                 Charset utf8 = StandardCharsets.UTF_8;
 
-                String[] titles = new String[maxLength];
-                String inputLine;
-                int index = 0;
+                //titleCatalog = new ArrayList<String>(allInputLines.size() / 13); //this accounts for the format of Chartlyrics's xml documents
+                //String[] titles = new String[maxLength];
+                //String inputLine;
+                //int index = 0;
 
+                /*for (int i = 0; i < allInputLines.size(); i++) {
+                    String currentLine = allInputLines.get(i);
+                    if (currentLine.contains("<Song>")) {
+                        String song = TagExtractor.extractTag(currentLine, "Song");
+                        String simple = Song.simpleTitle(song);
+                        if (!simpleTitles.contains(simple)) {
+                            //titles[index] = song;
+                            allTitles.add(song);
+                            simpleTitles.add(simple);
+                            //index++;
+                        }
+                    }
+                }*/
+
+                String[] titles = new String[maxLength];
+                FastRemovalList titleFRL = new FastRemovalList(titleCatalog);
+
+                for (int i = 0; i < maxLength && titleFRL.getSize() > 0; i++) titles[i] = titleFRL.remove();
+
+                return titles;
+                /*
                 Log.d("1", "5");
 
                 while ((inputLine = in.readLine()) != null && index < maxLength) {
@@ -233,13 +367,11 @@ public class MainActivity extends ActionBarActivity implements ConnectionCallbac
                     }
                 }
                 Log.d("1", "6");
-                in.close();
-                Log.d("" + titles.length, "" + titles.length);
-                return titles;
-            } catch (Exception e) {
-                Log.d("exception", "exception");
-                return new String[]{"Exception from PlaylistBuilderEnclosed: " + e};
-            }
+                //in.close();
+                Log.d("" + titles.length, "" + titles.length);*/
+            //} catch (Exception e) {
+              //  return new String[]{"Exception from PlaylistBuilderEnclosed: " + e};
+            //}
         }
 
         @Override
